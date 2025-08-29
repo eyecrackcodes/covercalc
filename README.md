@@ -7,10 +7,12 @@ A comprehensive calculator for analyzing agent-level profitability in final expe
 - **Real-time Calculations**: Instantly see how changes in variables affect profitability
 - **Interactive Controls**: Use sliders and inputs to adjust parameters
 - **Working Days Calculation**: Factor in weekends and holidays for accurate monthly projections
-- **Key Metrics Display**: Track monthly leads, closes, placed policies, revenue, expenses, and profit per agent
-- **Break-Even Analysis**: Understand minimum requirements to achieve profitability
-- **Sensitivity Analysis**: View how each variable impacts profit through tables and charts
-- **Visual Charts**: Interactive charts showing the relationship between variables and profitability
+- **Lead Cost Tracking**: Separate marketing spend from general overhead for clearer expense analysis
+- **Agent Outage Factor**: Account for realistic agent availability (sick days, training, meetings)
+- **Key Metrics Display**: Track monthly leads, effective leads, closes, placed policies, revenue, expenses breakdown, and profit per agent
+- **Break-Even Analysis**: Understand minimum requirements to achieve profitability with all factors considered
+- **Sensitivity Analysis**: View how each variable impacts profit through tables and charts, including outage and lead cost impacts
+- **Visual Charts**: Interactive charts showing the relationship between all variables and profitability
 
 ## Getting Started
 
@@ -35,18 +37,21 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ### Agent Profitability Calculations
 
 1. **Monthly leads per agent** = leads per day × working days per month
-2. **Closes per agent** = monthly leads per agent × (close rate / 100)
-3. **Placed policies per agent** = closes per agent × (place rate / 100)
-4. **Commission revenue per agent** = placed policies per agent × (commission rate / 100) × average annual premium
-5. **Expense per agent** = total overhead / agent headcount
-6. **Profit per agent** = commission revenue per agent - expense per agent
+2. **Effective leads per agent** = monthly leads × (1 - agent outage % / 100)
+3. **Closes per agent** = effective leads per agent × (close rate / 100)
+4. **Placed policies per agent** = closes per agent × (place rate / 100)
+5. **Commission revenue per agent** = placed policies per agent × (commission rate / 100) × average annual premium
+6. **Lead cost per agent** = monthly leads per agent × average lead cost
+7. **Overhead per agent** = total overhead / agent headcount
+8. **Total expense per agent** = overhead per agent + lead cost per agent
+9. **Profit per agent** = commission revenue per agent - total expense per agent
 
 ### Break-Even Analysis
 
-- **Minimum Close Rate** = (expense per agent) / (monthly leads per agent × (place rate / 100) × (commission rate / 100) × average annual premium) × 100
-- **Minimum Place Rate** = (expense per agent) / (closes per agent × (commission rate / 100) × average annual premium) × 100
-- **Minimum Premium** = expense per agent / (placed policies per agent × (commission rate / 100))
-- **Minimum Leads per Day** = expense per agent / ((close rate / 100) × (place rate / 100) × (commission rate / 100) × average annual premium × working days per month)
+- **Minimum Close Rate** = (total expense per agent) / (effective leads per agent × (place rate / 100) × (commission rate / 100) × average annual premium) × 100
+- **Minimum Place Rate** = (total expense per agent) / (closes per agent × (commission rate / 100) × average annual premium) × 100
+- **Minimum Premium** = total expense per agent / (placed policies per agent × (commission rate / 100))
+- **Minimum Leads per Day** = total expense per agent / ((close rate / 100) × (place rate / 100) × (commission rate / 100) × average annual premium × working days per month × (1 - agent outage % / 100))
 
 ## Default Values
 
@@ -58,6 +63,8 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - **Agent Headcount**: 50
 - **Total Overhead**: $1,000,000
 - **Commission Rate**: 140%
+- **Average Lead Cost**: $50
+- **Agent Outage**: 10% (accounts for sick days, training, meetings, etc.)
 
 ## Technologies Used
 
