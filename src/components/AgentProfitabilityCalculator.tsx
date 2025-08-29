@@ -41,6 +41,8 @@ interface CalculatorInputs {
   agentHeadcount: number;
   totalOverhead: number;
   commissionRate: number;
+  avgLeadCost: number;
+  agentOutagePercent: number;
 }
 
 const AgentProfitabilityCalculator: React.FC = () => {
@@ -53,23 +55,38 @@ const AgentProfitabilityCalculator: React.FC = () => {
     agentHeadcount: 50,
     totalOverhead: 1000000,
     commissionRate: 140,
+    avgLeadCost: 50,
+    agentOutagePercent: 10,
   });
 
   // Calculate agent metrics
   const calculations = useMemo(() => {
     const monthlyLeadsPerAgent =
       inputs.leadsPerAgentPerDay * inputs.workingDaysPerMonth;
-    const closesPerAgent = monthlyLeadsPerAgent * (inputs.closeRate / 100);
+    
+    // Apply agent outage factor - reduces effective leads taken
+    const effectiveLeadsPerAgent = monthlyLeadsPerAgent * (1 - inputs.agentOutagePercent / 100);
+    
+    const closesPerAgent = effectiveLeadsPerAgent * (inputs.closeRate / 100);
     const placedPoliciesPerAgent = closesPerAgent * (inputs.placeRate / 100);
     const commissionRevenuePerAgent =
       placedPoliciesPerAgent *
       (inputs.commissionRate / 100) *
       inputs.avgAnnualPremium;
-    const expensePerAgent =
+    
+    // Calculate lead cost per agent (based on total leads, not effective leads)
+    const leadCostPerAgent = monthlyLeadsPerAgent * inputs.avgLeadCost;
+    
+    // Overhead expense per agent
+    const overheadPerAgent =
       inputs.agentHeadcount > 0
         ? inputs.totalOverhead / inputs.agentHeadcount
         : 0;
-    const profitPerAgent = commissionRevenuePerAgent - expensePerAgent;
+    
+    // Total expense includes overhead + lead costs
+    const totalExpensePerAgent = overheadPerAgent + leadCostPerAgent;
+    
+    const profitPerAgent = commissionRevenuePerAgent - totalExpensePerAgent;
     const profitMargin =
       commissionRevenuePerAgent > 0
         ? (profitPerAgent / commissionRevenuePerAgent) * 100
@@ -77,42 +94,46 @@ const AgentProfitabilityCalculator: React.FC = () => {
 
     // Break-even calculations with safety checks
     const breakEvenDenominator1 =
-      monthlyLeadsPerAgent *
+      effectiveLeadsPerAgent *
       (inputs.placeRate / 100) *
       (inputs.commissionRate / 100) *
       inputs.avgAnnualPremium;
     const breakEvenCloseRate =
       breakEvenDenominator1 > 0
-        ? (expensePerAgent / breakEvenDenominator1) * 100
+        ? (totalExpensePerAgent / breakEvenDenominator1) * 100
         : 0;
 
     const breakEvenDenominator2 =
       closesPerAgent * (inputs.commissionRate / 100) * inputs.avgAnnualPremium;
     const breakEvenPlaceRate =
       breakEvenDenominator2 > 0
-        ? (expensePerAgent / breakEvenDenominator2) * 100
+        ? (totalExpensePerAgent / breakEvenDenominator2) * 100
         : 0;
 
     const breakEvenDenominator3 =
       placedPoliciesPerAgent * (inputs.commissionRate / 100);
     const breakEvenPremium =
-      breakEvenDenominator3 > 0 ? expensePerAgent / breakEvenDenominator3 : 0;
+      breakEvenDenominator3 > 0 ? totalExpensePerAgent / breakEvenDenominator3 : 0;
 
     const breakEvenDenominator4 =
       (inputs.closeRate / 100) *
       (inputs.placeRate / 100) *
       (inputs.commissionRate / 100) *
       inputs.avgAnnualPremium *
-      inputs.workingDaysPerMonth;
+      inputs.workingDaysPerMonth *
+      (1 - inputs.agentOutagePercent / 100);
     const breakEvenLeadsPerDay =
-      breakEvenDenominator4 > 0 ? expensePerAgent / breakEvenDenominator4 : 0;
+      breakEvenDenominator4 > 0 ? totalExpensePerAgent / breakEvenDenominator4 : 0;
 
     return {
       monthlyLeadsPerAgent,
+      effectiveLeadsPerAgent,
       closesPerAgent,
       placedPoliciesPerAgent,
       commissionRevenuePerAgent,
-      expensePerAgent,
+      overheadPerAgent,
+      leadCostPerAgent,
+      totalExpensePerAgent,
       profitPerAgent,
       profitMargin,
       breakEvenCloseRate,
@@ -131,19 +152,23 @@ const AgentProfitabilityCalculator: React.FC = () => {
       const tempInputs = { ...inputs, [variable]: value };
       const monthlyLeadsPerAgent =
         tempInputs.leadsPerAgentPerDay * tempInputs.workingDaysPerMonth;
+      const effectiveLeadsPerAgent = 
+        monthlyLeadsPerAgent * (1 - tempInputs.agentOutagePercent / 100);
       const closesPerAgent =
-        monthlyLeadsPerAgent * (tempInputs.closeRate / 100);
+        effectiveLeadsPerAgent * (tempInputs.closeRate / 100);
       const placedPoliciesPerAgent =
         closesPerAgent * (tempInputs.placeRate / 100);
       const commissionRevenuePerAgent =
         placedPoliciesPerAgent *
         (tempInputs.commissionRate / 100) *
         tempInputs.avgAnnualPremium;
-      const expensePerAgent =
+      const leadCostPerAgent = monthlyLeadsPerAgent * tempInputs.avgLeadCost;
+      const overheadPerAgent =
         tempInputs.agentHeadcount > 0
           ? tempInputs.totalOverhead / tempInputs.agentHeadcount
           : 0;
-      const profitPerAgent = commissionRevenuePerAgent - expensePerAgent;
+      const totalExpensePerAgent = overheadPerAgent + leadCostPerAgent;
+      const profitPerAgent = commissionRevenuePerAgent - totalExpensePerAgent;
 
       return {
         value,
@@ -168,6 +193,14 @@ const AgentProfitabilityCalculator: React.FC = () => {
     "leadsPerAgentPerDay",
     [3, 4, 5, 6, 7]
   );
+  const outageData = generateSensitivityData(
+    "agentOutagePercent",
+    [0, 5, 10, 15, 20]
+  );
+  const leadCostData = generateSensitivityData(
+    "avgLeadCost",
+    [25, 50, 75, 100, 125]
+  );
 
   const handleInputChange = (
     key: keyof CalculatorInputs,
@@ -178,10 +211,10 @@ const AgentProfitabilityCalculator: React.FC = () => {
       setInputs((prev) => ({ ...prev, [key]: value[0] }));
       return;
     }
-    
+
     // For text inputs, allow empty string during typing
     const strValue = value as string;
-    if (strValue === '') {
+    if (strValue === "") {
       // Use minimum valid values for empty inputs
       const minValues: Partial<CalculatorInputs> = {
         agentHeadcount: 1,
@@ -192,14 +225,16 @@ const AgentProfitabilityCalculator: React.FC = () => {
         avgAnnualPremium: 0,
         closeRate: 0,
         placeRate: 0,
+        avgLeadCost: 0,
+        agentOutagePercent: 0,
       };
       setInputs((prev) => ({ ...prev, [key]: minValues[key] || 0 }));
       return;
     }
-    
+
     let numValue = parseFloat(strValue);
     if (isNaN(numValue)) return; // Don't update if not a valid number
-    
+
     // Ensure minimum values for critical inputs
     if (key === "agentHeadcount" && numValue < 1) numValue = 1;
     if (key === "workingDaysPerMonth" && numValue < 1) numValue = 1;
@@ -207,6 +242,9 @@ const AgentProfitabilityCalculator: React.FC = () => {
     if (key === "commissionRate" && numValue < 0) numValue = 0;
     if (key === "totalOverhead" && numValue < 0) numValue = 0;
     if (key === "avgAnnualPremium" && numValue < 0) numValue = 0;
+    if (key === "avgLeadCost" && numValue < 0) numValue = 0;
+    if (key === "agentOutagePercent" && numValue < 0) numValue = 0;
+    if (key === "agentOutagePercent" && numValue > 100) numValue = 100;
 
     setInputs((prev) => ({ ...prev, [key]: numValue }));
   };
@@ -273,7 +311,7 @@ const AgentProfitabilityCalculator: React.FC = () => {
                 />
                 <Input
                   type="number"
-                  value={inputs.closeRate || ''}
+                  value={inputs.closeRate || ""}
                   onChange={(e) =>
                     handleInputChange("closeRate", e.target.value)
                   }
@@ -298,7 +336,7 @@ const AgentProfitabilityCalculator: React.FC = () => {
                 />
                 <Input
                   type="number"
-                  value={inputs.placeRate || ''}
+                  value={inputs.placeRate || ""}
                   onChange={(e) =>
                     handleInputChange("placeRate", e.target.value)
                   }
@@ -314,7 +352,7 @@ const AgentProfitabilityCalculator: React.FC = () => {
               <Input
                 id="avgAnnualPremium"
                 type="number"
-                value={inputs.avgAnnualPremium || ''}
+                value={inputs.avgAnnualPremium || ""}
                 onChange={(e) =>
                   handleInputChange("avgAnnualPremium", e.target.value)
                 }
@@ -329,7 +367,7 @@ const AgentProfitabilityCalculator: React.FC = () => {
               <Input
                 id="leadsPerAgentPerDay"
                 type="number"
-                value={inputs.leadsPerAgentPerDay || ''}
+                value={inputs.leadsPerAgentPerDay || ""}
                 onChange={(e) =>
                   handleInputChange("leadsPerAgentPerDay", e.target.value)
                 }
@@ -355,7 +393,7 @@ const AgentProfitabilityCalculator: React.FC = () => {
                 />
                 <Input
                   type="number"
-                  value={inputs.workingDaysPerMonth || ''}
+                  value={inputs.workingDaysPerMonth || ""}
                   onChange={(e) =>
                     handleInputChange("workingDaysPerMonth", e.target.value)
                   }
@@ -373,7 +411,7 @@ const AgentProfitabilityCalculator: React.FC = () => {
               <Input
                 id="agentHeadcount"
                 type="number"
-                value={inputs.agentHeadcount || ''}
+                value={inputs.agentHeadcount || ""}
                 onChange={(e) =>
                   handleInputChange("agentHeadcount", e.target.value)
                 }
@@ -400,6 +438,47 @@ const AgentProfitabilityCalculator: React.FC = () => {
                 )}
               </select>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="avgLeadCost">Average Lead Cost ($)</Label>
+              <Input
+                id="avgLeadCost"
+                type="number"
+                value={inputs.avgLeadCost || ""}
+                onChange={(e) =>
+                  handleInputChange("avgLeadCost", e.target.value)
+                }
+                placeholder="e.g. 50"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="agentOutagePercent">Agent Outage (%)</Label>
+              <div className="flex items-center gap-4">
+                <Slider
+                  id="agentOutagePercent"
+                  min={0}
+                  max={30}
+                  step={1}
+                  value={[inputs.agentOutagePercent]}
+                  onValueChange={(value) =>
+                    handleInputChange("agentOutagePercent", value)
+                  }
+                  className="flex-1"
+                />
+                <Input
+                  type="number"
+                  value={inputs.agentOutagePercent || ""}
+                  onChange={(e) =>
+                    handleInputChange("agentOutagePercent", e.target.value)
+                  }
+                  className="w-20"
+                />
+              </div>
+              <span className="text-xs text-muted-foreground">
+                Accounts for sick days, training, meetings, etc.
+              </span>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -417,6 +496,12 @@ const AgentProfitabilityCalculator: React.FC = () => {
                 </span>
                 <span className="font-semibold">
                   {calculations.monthlyLeadsPerAgent.toFixed(0)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center p-3 rounded-lg bg-orange-100 dark:bg-orange-900/20">
+                <span className="text-sm font-medium">Effective Leads (after outage)</span>
+                <span className="font-semibold text-orange-700 dark:text-orange-400">
+                  {calculations.effectiveLeadsPerAgent.toFixed(0)}
                 </span>
               </div>
               <div className="flex justify-between items-center p-3 rounded-lg bg-muted">
@@ -442,9 +527,21 @@ const AgentProfitabilityCalculator: React.FC = () => {
                 </span>
               </div>
               <div className="flex justify-between items-center p-3 rounded-lg bg-muted">
-                <span className="text-sm font-medium">Expense per Agent</span>
+                <span className="text-sm font-medium">Overhead per Agent</span>
                 <span className="font-semibold">
-                  {formatCurrency(calculations.expensePerAgent)}
+                  {formatCurrency(calculations.overheadPerAgent)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center p-3 rounded-lg bg-purple-100 dark:bg-purple-900/20">
+                <span className="text-sm font-medium">Lead Cost per Agent</span>
+                <span className="font-semibold text-purple-700 dark:text-purple-400">
+                  {formatCurrency(calculations.leadCostPerAgent)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center p-3 rounded-lg bg-muted">
+                <span className="text-sm font-medium">Total Expense per Agent</span>
+                <span className="font-semibold">
+                  {formatCurrency(calculations.totalExpensePerAgent)}
                 </span>
               </div>
               <div
@@ -672,6 +769,66 @@ const AgentProfitabilityCalculator: React.FC = () => {
                     </TableBody>
                   </Table>
                 </div>
+
+                <div>
+                  <h4 className="font-semibold mb-3">Agent Outage Sensitivity</h4>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Outage (%)</TableHead>
+                        <TableHead className="text-right">
+                          Profit per Agent
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {outageData.map((row) => (
+                        <TableRow key={row.value}>
+                          <TableCell>{row.value}%</TableCell>
+                          <TableCell
+                            className={`text-right font-medium ${
+                              row.profit >= 0
+                                ? "text-green-600"
+                                : "text-red-600"
+                            }`}
+                          >
+                            {formatCurrency(row.profit)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold mb-3">Lead Cost Sensitivity</h4>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Lead Cost ($)</TableHead>
+                        <TableHead className="text-right">
+                          Profit per Agent
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {leadCostData.map((row) => (
+                        <TableRow key={row.value}>
+                          <TableCell>{formatCurrency(row.value)}</TableCell>
+                          <TableCell
+                            className={`text-right font-medium ${
+                              row.profit >= 0
+                                ? "text-green-600"
+                                : "text-red-600"
+                            }`}
+                          >
+                            {formatCurrency(row.profit)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </TabsContent>
 
@@ -824,6 +981,80 @@ const AgentProfitabilityCalculator: React.FC = () => {
                           type="monotone"
                           dataKey="profit"
                           stroke="#ff8042"
+                          strokeWidth={2}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Agent Outage Impact</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <LineChart data={outageData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="value"
+                          label={{
+                            value: "Outage (%)",
+                            position: "insideBottom",
+                            offset: -5,
+                          }}
+                        />
+                        <YAxis
+                          label={{
+                            value: "Profit ($)",
+                            angle: -90,
+                            position: "insideLeft",
+                          }}
+                        />
+                        <Tooltip
+                          formatter={(value) => formatCurrency(Number(value))}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="profit"
+                          stroke="#8b5cf6"
+                          strokeWidth={2}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Lead Cost Impact</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <LineChart data={leadCostData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="value"
+                          label={{
+                            value: "Lead Cost ($)",
+                            position: "insideBottom",
+                            offset: -5,
+                          }}
+                        />
+                        <YAxis
+                          label={{
+                            value: "Profit ($)",
+                            angle: -90,
+                            position: "insideLeft",
+                          }}
+                        />
+                        <Tooltip
+                          formatter={(value) => formatCurrency(Number(value))}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="profit"
+                          stroke="#ec4899"
                           strokeWidth={2}
                         />
                       </LineChart>
